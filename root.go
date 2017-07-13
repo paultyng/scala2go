@@ -56,11 +56,12 @@ var rootCmd = &cobra.Command{
 			}
 
 			g := &generator{
-				out:              out,
-				classNames:       classNames,
-				customTypes:      viper.GetStringMapString("custom-types"),
-				caseOverrides:    viper.GetStringSlice("case-overrides"),
-				blacklistedTypes: viper.GetStringSlice("blacklisted-types"),
+				out:             out,
+				classNames:      classNames,
+				customTypes:     viper.GetStringMapString("custom-types"),
+				caseOverrides:   viper.GetStringSlice("case-overrides"),
+				blacklistTypes:  viper.GetStringSlice("blacklist-types"),
+				blacklistFields: viper.GetStringSlice("blacklist-fields"),
 			}
 
 			for _, f := range jar.File {

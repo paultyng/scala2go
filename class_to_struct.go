@@ -12,60 +12,19 @@ import (
 	"github.com/pkg/errors"
 )
 
-type blacklistedError struct{}
+type blacklistError struct{}
 
-func (e *blacklistedError) Error() string {
-	return "BLACKLISTED_FIELD"
+func (e *blacklistError) Error() string {
+	return "blacklist"
 }
 
-type generator struct {
-	classNames       []string
-	out              io.Writer
-	customTypes      map[string]string
-	caseOverrides    []string
-	blacklistedTypes []string
-}
-
-func (g *generator) Printf(f string, a ...interface{}) {
-	fmt.Fprintf(g.out, f, a...)
-}
-
-func (g *generator) goType(desc string) (string, error) {
-	//HACK not sure why these are lower cased from viper
-	if t, ok := g.customTypes[strings.ToLower(desc)]; ok {
-		return t, nil
-	}
-	for _, bT := range g.blacklistedTypes {
-		if bT == desc {
-			return "", &blacklistedError{}
-		}
-		continue
-	}
-	if i := strings.Index(desc, "<"); i >= 0 {
-		wrapper := desc[0:i+1] + ">;"
-		pDesc := desc[i+1 : len(desc)-2]
-
-		p, err := g.goType(pDesc)
-		if err != nil {
-			return "", errors.Wrapf(err, "unable to find generic parameter %s", desc)
-		}
-		switch wrapper {
-		case "Lscala/Option<>;":
-			if strings.HasPrefix(p, "[]") || strings.HasPrefix(p, "map[") {
-				return p, nil
-			}
-			return "*" + p, nil
-		case "Lscala/collection/immutable/List<>;":
-			return "[]" + p, nil
-		case "Lscala/collection/Seq<>;":
-			return "[]" + p, nil
-		default:
-			return "", errors.Errorf("unable to map type %s", desc)
-		}
-	}
+var builtinTypes = map[string]string{
+	"Lscala/collection/immutable/List<>;": "[]%s",
+	"Lscala/collection/immutable/Map<>;":  "map[%s]%s",
+	"Lscala/collection/immutable/Set<>;":  "[]%s",
+	"Lscala/collection/Seq<>;":            "[]%s",
 
 	// simple cases
-	switch desc {
 	// B	byte	signed byte
 	// C	char	Unicode character code point in the Basic Multilingual Plane, encoded with UTF-16
 	// D	double	double-precision floating-point value
@@ -73,29 +32,118 @@ func (g *generator) goType(desc string) (string, error) {
 	// L	ClassName ;	reference	an instance of class ClassName
 	// S	short	signed short
 	// [	reference	one array dimension
-	case "J":
-		return "int64", nil
-	case "I":
-		return "int", nil
-	case "Z":
-		return "bool", nil
-	case "Ljava/lang/Object;":
-		return "int", nil
-	case "Ljava/lang/String;":
-		return "string", nil
-	case "Lscala/Enumeration$Value;":
-		return "string", nil
-	case "Lscala/math/BigDecimal;":
-		return "decimal.Decimal", nil
-	case "Lorg/joda/time/DateTime;":
-		return "time.Time", nil
-	case "Ljava/sql/Timestamp;":
-		return "time.Time", nil
-	case "Ljava/sql/Date;":
-		return "time.Time", nil
+	"J": "int64",
+	"I": "int",
+	"Z": "bool",
+
+	"Ljava/lang/Object;":        "int",
+	"Ljava/lang/String;":        "string",
+	"Ljava/sql/Date;":           "time.Time",
+	"Ljava/sql/Timestamp;":      "time.Time",
+	"Lorg/joda/time/DateTime;":  "time.Time",
+	"Lscala/Enumeration$Value;": "string",
+	"Lscala/math/BigDecimal;":   "decimal.Decimal",
+}
+
+type generator struct {
+	classNames      []string
+	out             io.Writer
+	customTypes     map[string]string
+	caseOverrides   []string
+	blacklistTypes  []string
+	blacklistFields []string
+}
+
+func (g *generator) Printf(f string, a ...interface{}) {
+	fmt.Fprintf(g.out, f, a...)
+}
+
+type genericParam struct {
+	t      string
+	params []genericParam
+}
+
+func parseGenericParams(desc string) (*genericParam, error) {
+	if i := strings.Index(desc, "<"); i >= 0 {
+		p := &genericParam{
+			t:      desc[0:i+1] + ">;",
+			params: []genericParam{},
+		}
+		inner := desc[i+1 : len(desc)-2]
+		opens := 0
+		pos := strings.IndexAny(inner, ";<>")
+		lastPos := 0
+		for pos >= 0 {
+			switch c := inner[pos]; c {
+			case '<':
+				opens++
+			case '>':
+				opens--
+			case ';':
+				if opens == 0 {
+					child, err := parseGenericParams(inner[lastPos : pos+1])
+					if err != nil {
+						return nil, err
+					}
+					p.params = append(p.params, *child)
+					lastPos = pos + 1
+				}
+			}
+			if pos >= len(inner)-1 {
+				break
+			}
+
+			pos += strings.IndexAny(inner[pos+1:len(inner)], ";<>") + 1
+		}
+
+		return p, nil
 	}
 
-	{
+	return &genericParam{
+		t: desc,
+	}, nil
+}
+
+func (g *generator) mapScalaType(gp genericParam) (string, error) {
+	children := make([]interface{}, len(gp.params))
+	for i, st := range gp.params {
+		c, err := g.mapScalaType(st)
+		if err != nil {
+			return "", err
+		}
+		children[i] = c
+	}
+
+	desc := gp.t
+	//HACK not sure why these are lower cased from viper
+	if t, ok := g.customTypes[strings.ToLower(desc)]; ok {
+		if strings.Contains(desc, "%") {
+			return fmt.Sprintf(t, children...), nil
+		}
+		return t, nil
+	}
+	for _, bT := range g.blacklistTypes {
+		if bT == desc {
+			return "", &blacklistError{}
+		}
+		continue
+	}
+	//special scala.Option handling for maps/slices and pointers
+	if desc == "Lscala/Option<>;" {
+		if len(children) != 1 {
+			return "", errors.Errorf("scala.Option requires 1 generic parameter")
+		}
+		c := children[0].(string)
+		if strings.HasPrefix(c, "[]") || strings.HasPrefix(c, "map[") {
+			return c, nil
+		}
+		return "*" + c, nil
+	}
+	if t, ok := builtinTypes[desc]; ok {
+		return fmt.Sprintf(t, children...), nil
+	}
+	if strings.HasPrefix(desc, "L") {
+		// is it a class we are processing?
 		test := desc
 		test = strings.TrimPrefix(test, "L")
 		test = strings.TrimSuffix(test, ";")
@@ -106,8 +154,16 @@ func (g *generator) goType(desc string) (string, error) {
 			}
 		}
 	}
-
 	return "", errors.Errorf("unable to map type %s", desc)
+}
+
+func (g *generator) goType(desc string) (string, error) {
+	gp, err := parseGenericParams(desc)
+	if err != nil {
+		return "", err
+	}
+
+	return g.mapScalaType(*gp)
 }
 
 func (g *generator) fieldType(f *jclass.FieldInfo) (string, error) {
@@ -189,6 +245,11 @@ func (g *generator) jsonName(name string) string {
 
 func (g *generator) structField(f *jclass.FieldInfo) (name, goType, extra string, err error) {
 	name = g.fieldName(f.NameString())
+	for _, bl := range g.blacklistFields {
+		if strings.ToLower(bl) == strings.ToLower(name) {
+			return "", "", "", &blacklistError{}
+		}
+	}
 	t, err := g.fieldType(f)
 	if err != nil {
 		return "", "", "", err
@@ -235,7 +296,7 @@ func (g *generator) classToStruct(name string, cf *jclass.ClassFile) error {
 			n, t, extra, err := g.structField(field)
 			if err != nil {
 				switch err := err.(type) {
-				case *blacklistedError:
+				case *blacklistError:
 					continue
 				default:
 					return errors.Wrapf(err, "unable to handle field %s", field.NameString())
