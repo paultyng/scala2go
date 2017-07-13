@@ -41,6 +41,7 @@ var builtinTypes = map[string]string{
 	"Ljava/sql/Date;":           "time.Time",
 	"Ljava/sql/Timestamp;":      "time.Time",
 	"Lorg/joda/time/DateTime;":  "time.Time",
+	"Lorg/joda/time/LocalDate;": "time.Time",
 	"Lscala/Enumeration$Value;": "string",
 	"Lscala/math/BigDecimal;":   "decimal.Decimal",
 }
