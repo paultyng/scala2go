@@ -1,0 +1,13 @@
+package: github.com/paultyng/scala2go
+import:
+- package: github.com/paultyng/jclass
+  version: ^1.0.0
+- package: github.com/pkg/errors
+  version: ^0.8.0
+- package: github.com/spf13/cobra
+- package: github.com/spf13/viper
+testImport:
+- package: github.com/stretchr/testify
+  version: ^1.1.4
+  subpackages:
+  - assert
