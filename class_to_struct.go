@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"sort"
@@ -164,21 +165,26 @@ func (g *generator) goType(desc string) (string, error) {
 		return "", err
 	}
 
-	return g.mapScalaType(*gp)
+	dst, err := g.mapScalaType(*gp)
+	if err != nil {
+		return "", err
+	}
+	return dst, nil
 }
 
 func (g *generator) fieldType(f *jclass.FieldInfo) (string, error) {
-	var sig *jclass.AttributeInfo
+	var sig *jclass.ConstantUtf8Info
 	for _, ai := range f.Attributes {
 		if ai.NameString() == "Signature" {
-			sig = ai
-			break
+			cpi := binary.BigEndian.Uint16(ai.Info)
+			cp := ai.ConstantPoolInfo(cpi)
+			sig = (*jclass.ConstantUtf8Info)(cp)
 		}
 	}
 
 	desc := f.DescriptorString()
 	if sig != nil {
-		desc = sig.SignatureString()
+		desc = sig.Utf8()
 	}
 
 	return g.goType(desc)
@@ -292,6 +298,18 @@ func (g *generator) classToStruct(name string, cf *jclass.ClassFile) error {
 	sort.SliceStable(cf.Fields, func(i, j int) bool {
 		return cf.Fields[i].NameString() < cf.Fields[j].NameString()
 	})
+	var scala bool
+	for _, ai := range cf.Attributes {
+		if ai.NameString() == "ScalaSig" {
+			scala = true
+		}
+		if ai.NameString() == "RuntimeVisibleAnnotations" {
+			//TODO:
+		}
+	}
+	if !scala {
+		return errors.Errorf("class does not have a ScalaSig")
+	}
 	for _, field := range cf.Fields {
 		if field.AccessFlags&privateFinal != 0 {
 			n, t, extra, err := g.structField(field)
