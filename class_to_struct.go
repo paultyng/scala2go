@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -304,7 +305,21 @@ func (g *generator) classToStruct(name string, cf *jclass.ClassFile) error {
 			scala = true
 		}
 		if ai.NameString() == "RuntimeVisibleAnnotations" {
-			//TODO:
+			for _, ann := range ai.Annotations {
+				switch ts := ann.TypeString(); ts {
+				case "Lscala/reflect/ScalaSignature;":
+					evp := ann.ElementValuePairs[0]
+					cpi := evp.Value.ConstantPoolIndex
+					utf8 := (*jclass.ConstantUtf8Info)(evp.Value.ConstantPoolInfo(cpi))
+					r := bytes.NewReader(utf8.Bytes())
+					err := readScalaSignature(r)
+					if err != nil {
+						return err
+					}
+				case "Lscala/reflect/ScalaLongSignature;":
+					return errors.Errorf("long scala signatures are not supported")
+				}
+			}
 		}
 	}
 	if !scala {
