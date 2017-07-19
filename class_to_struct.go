@@ -200,18 +200,15 @@ func splitOnBoundary(s string) []string {
 	current := string(runes[0])
 	parts := []string{}
 	for i := 1; i < len(runes); i++ {
+		switch {
 		// Boundary is... aB
-		if unicode.IsUpper(runes[i]) && unicode.IsLower(runes[i-1]) {
-			parts = append(parts, current)
-			current = ""
-		}
+		case unicode.IsUpper(runes[i]) && unicode.IsLower(runes[i-1]):
+			fallthrough
 		// Boundary is #(a|A)
-		if unicode.IsNumber(runes[i]) && unicode.IsLetter(runes[i-1]) {
-			parts = append(parts, current)
-			current = ""
-		}
+		case unicode.IsNumber(runes[i]) && unicode.IsLetter(runes[i-1]):
+			fallthrough
 		// Boundary is (a|A)#
-		if unicode.IsLetter(runes[i]) && unicode.IsNumber(runes[i-1]) {
+		case unicode.IsLetter(runes[i]) && unicode.IsNumber(runes[i-1]):
 			parts = append(parts, current)
 			current = ""
 		}
