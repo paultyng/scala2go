@@ -98,3 +98,53 @@ func TestGoType(t *testing.T) {
 		})
 	}
 }
+
+func TestSplitOnBoundary(t *testing.T) {
+	cases := []struct {
+		split     []string
+		fieldName string
+	}{
+		{[]string{"Field", "One", "Two", "Three"}, "FieldOneTwoThree"},
+		{[]string{"Field", "One", "Two"}, "FieldOneTwo"},
+		{[]string{"Field", "One"}, "FieldOne"},
+		{[]string{"Field", "1"}, "Field1"},
+		{[]string{"Field", "123"}, "Field123"},
+		{[]string{"Field", "123", "Four"}, "Field123Four"},
+		{[]string{"B"}, "B"},
+	}
+
+	for i, c := range cases {
+		t.Run(fmt.Sprintf("%d, %s", i, c.fieldName), func(t *testing.T) {
+			assert := assert.New(t)
+			actual := splitOnBoundary(c.fieldName)
+			assert.Equal(len(actual), len(c.split))
+		})
+	}
+}
+
+func TestJSONName(t *testing.T) {
+	g := &generator{
+		out:        ioutil.Discard,
+		classNames: []string{"com.ua.Foo"},
+	}
+	cases := []struct {
+		jsonName  string
+		fieldName string
+	}{
+		{"field_one_two_three", "FieldOneTwoThree"},
+		{"field_one_two", "FieldOneTwo"},
+		{"field_one", "FieldOne"},
+		{"field_1", "Field1"},
+		{"field_123", "Field123"},
+		{"field_123_four", "Field123Four"},
+		{"a", "A"},
+	}
+
+	for i, c := range cases {
+		t.Run(fmt.Sprintf("%d, %s", i, c.fieldName), func(t *testing.T) {
+			assert := assert.New(t)
+			actual := g.jsonName(c.fieldName)
+			assert.Equal(actual, c.jsonName)
+		})
+	}
+}

@@ -190,7 +190,7 @@ func (g *generator) fieldType(f *jclass.FieldInfo) (string, error) {
 	return g.goType(desc)
 }
 
-func splitOnCase(s string) []string {
+func splitOnBoundary(s string) []string {
 	runes := []rune(s)
 
 	if len(runes) <= 1 {
@@ -200,7 +200,15 @@ func splitOnCase(s string) []string {
 	current := string(runes[0])
 	parts := []string{}
 	for i := 1; i < len(runes); i++ {
-		if unicode.IsUpper(runes[i]) && unicode.IsLower(runes[i-1]) {
+		switch {
+		// Boundary is... aB
+		case unicode.IsUpper(runes[i]) && unicode.IsLower(runes[i-1]):
+			fallthrough
+		// Boundary is #(a|A)
+		case unicode.IsNumber(runes[i]) && unicode.IsLetter(runes[i-1]):
+			fallthrough
+		// Boundary is (a|A)#
+		case unicode.IsLetter(runes[i]) && unicode.IsNumber(runes[i-1]):
 			parts = append(parts, current)
 			current = ""
 		}
@@ -213,7 +221,7 @@ func splitOnCase(s string) []string {
 }
 
 func (g *generator) fieldName(name string) string {
-	parts := splitOnCase(name)
+	parts := splitOnBoundary(name)
 	newParts := make([]string, len(parts))
 
 	for i, p := range parts {
@@ -237,7 +245,7 @@ func (g *generator) fieldName(name string) string {
 }
 
 func (g *generator) jsonName(name string) string {
-	parts := splitOnCase(name)
+	parts := splitOnBoundary(name)
 	newParts := make([]string, len(parts)*2-1)
 
 	for i, p := range parts {
