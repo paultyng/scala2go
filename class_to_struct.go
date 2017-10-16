@@ -23,21 +23,23 @@ var builtinTypes = map[string]string{
 	"Lscala/collection/immutable/List<>;": "[]%s",
 	"Lscala/collection/immutable/Map<>;":  "map[%s]%s",
 	"Lscala/collection/immutable/Set<>;":  "[]%s",
+	"Lscala/collection/immutable/Seq<>;":  "[]%s",
 	"Lscala/collection/Seq<>;":            "[]%s",
 
 	// simple cases
 	// B	byte	signed byte
 	// C	char	Unicode character code point in the Basic Multilingual Plane, encoded with UTF-16
-	// D	double	double-precision floating-point value
-	// F	float	single-precision floating-point value
 	// L	ClassName ;	reference	an instance of class ClassName
 	// S	short	signed short
 	// [	reference	one array dimension
+	"F": "float",
+	"D": "float64",
 	"J": "int64",
 	"I": "int",
 	"Z": "bool",
 
 	"Ljava/lang/Object;":        "int",
+	"Ljava/lang/Integer;":       "int",
 	"Ljava/lang/String;":        "string",
 	"Ljava/sql/Date;":           "time.Time",
 	"Ljava/sql/Timestamp;":      "time.Time",
