@@ -72,7 +72,9 @@ var rootCmd = &cobra.Command{
 					}
 					// Found the class in the jar, remove it from our lookups
 					delete(classPaths, f.Name)
-					_, classNames = classNames[0], classNames[1:]
+					if len(classNames) > 0 {
+						_, classNames = classNames[0], classNames[1:]
+					}
 				}
 			}
 		}
