@@ -23,21 +23,23 @@ var builtinTypes = map[string]string{
 	"Lscala/collection/immutable/List<>;": "[]%s",
 	"Lscala/collection/immutable/Map<>;":  "map[%s]%s",
 	"Lscala/collection/immutable/Set<>;":  "[]%s",
+	"Lscala/collection/immutable/Seq<>;":  "[]%s",
 	"Lscala/collection/Seq<>;":            "[]%s",
 
 	// simple cases
 	// B	byte	signed byte
 	// C	char	Unicode character code point in the Basic Multilingual Plane, encoded with UTF-16
-	// D	double	double-precision floating-point value
-	// F	float	single-precision floating-point value
 	// L	ClassName ;	reference	an instance of class ClassName
 	// S	short	signed short
 	// [	reference	one array dimension
+	"D": "float64",
+	"F": "float",
 	"J": "int64",
 	"I": "int",
 	"Z": "bool",
 
 	"Ljava/lang/Object;":        "int",
+	"Ljava/lang/Integer;":       "int",
 	"Ljava/lang/String;":        "string",
 	"Ljava/sql/Date;":           "time.Time",
 	"Ljava/sql/Timestamp;":      "time.Time",
@@ -172,7 +174,7 @@ func (g *generator) goType(desc string) (string, error) {
 	return dst, nil
 }
 
-func (g *generator) fieldType(f *jclass.FieldInfo) (string, error) {
+func (g *generator) fieldDesc(f *jclass.FieldInfo) string {
 	var sig *jclass.ConstantUtf8Info
 	for _, ai := range f.Attributes {
 		if ai.NameString() == "Signature" {
@@ -186,7 +188,11 @@ func (g *generator) fieldType(f *jclass.FieldInfo) (string, error) {
 	if sig != nil {
 		desc = sig.Utf8()
 	}
+	return desc
+}
 
+func (g *generator) fieldType(f *jclass.FieldInfo) (string, error) {
+	desc := g.fieldDesc(f)
 	return g.goType(desc)
 }
 
@@ -258,22 +264,23 @@ func (g *generator) jsonName(name string) string {
 	return strings.Join(newParts, "")
 }
 
-func (g *generator) structField(f *jclass.FieldInfo) (name, goType, extra string, err error) {
+func (g *generator) structField(f *jclass.FieldInfo) (name, goType, extra, comment string, err error) {
 	name = g.fieldName(f.NameString())
 	for _, bl := range g.blacklistFields {
 		if strings.ToLower(bl) == strings.ToLower(name) {
-			return "", "", "", &blacklistError{}
+			return "", "", "", "", &blacklistError{}
 		}
 	}
 	t, err := g.fieldType(f)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 	jsonTags := []string{g.jsonName(f.NameString())}
 	if strings.HasPrefix(t, "*") {
 		jsonTags = append(jsonTags, "omitempty")
 	}
-	return name, t, fmt.Sprintf("`json:\"%s\"`", strings.Join(jsonTags, ",")), nil
+	originalType := g.fieldDesc(f)
+	return name, t, fmt.Sprintf("`json:\"%s\"`", strings.Join(jsonTags, ",")), fmt.Sprintf("// %s", originalType), nil
 }
 
 func (g *generator) structName(name string) string {
@@ -303,6 +310,7 @@ func (g *generator) classFileToStruct(name string, f *zip.File) error {
 
 func (g *generator) classToStruct(name string, cf *jclass.ClassFile) error {
 	privateFinal := jclass.FIELD_ACC_PRIVATE + jclass.FIELD_ACC_FINAL
+
 	sort.SliceStable(cf.Fields, func(i, j int) bool {
 		return cf.Fields[i].NameString() < cf.Fields[j].NameString()
 	})
@@ -320,7 +328,7 @@ func (g *generator) classToStruct(name string, cf *jclass.ClassFile) error {
 	}
 	for _, field := range cf.Fields {
 		if field.AccessFlags&privateFinal != 0 {
-			n, t, extra, err := g.structField(field)
+			n, t, extra, comment, err := g.structField(field)
 			if err != nil {
 				switch err := err.(type) {
 				case *blacklistError:
@@ -329,7 +337,7 @@ func (g *generator) classToStruct(name string, cf *jclass.ClassFile) error {
 					return errors.Wrapf(err, "unable to handle field %s", field.NameString())
 				}
 			}
-			g.Printf("\t%s %s %s\n", n, t, extra)
+			g.Printf("\t%s %s %s %s\n", n, t, extra, comment)
 		}
 	}
 
